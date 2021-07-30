@@ -1,0 +1,255 @@
+drop SCHEMA IF EXISTS book_store;
+CREATE SCHEMA IF NOT EXISTS `book_store` DEFAULT CHARACTER SET utf8 ;
+USE `book_store` ;
+
+-- -----------------------------------------------------
+-- Table `book_store`.`Publisher`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `book_store`.`Publisher` (
+  `Name` VARCHAR(15) NOT NULL,
+  `Address` VARCHAR(45) NULL,
+  `Telephone` VARCHAR(15) NULL,
+  PRIMARY KEY (`Name`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `book_store`.`Author`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `book_store`.`Author` (
+`Author_Id` VARCHAR(15) NOT NULL,
+`Name`  VARCHAR(15) NOT NULL,
+  PRIMARY KEY (`Author_Id`))
+ENGINE = InnoDB;
+
+-- -----------------------------------------------------
+-- Table `book_store`.`Book`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `book_store`.`Book` (
+  `ISBN` INT NOT NULL auto_increment,
+  `Title` VARCHAR(15) NOT NULL,
+  `Price` INT NOT NULL,
+  `Category` VARCHAR(15) NOT NULL , 
+  `Publication_Year` DATE NOT NULL,
+  `Threshold` INT NOT NULL,
+  `Quantity` INT NOT NULL,
+  `Publisher_Name` VARCHAR(15) NOT NULL,
+  `Author_Id` VARCHAR(15) NOT NULL,
+  PRIMARY KEY (`ISBN`),
+  UNIQUE INDEX `ISBN_UNIQUE` (`ISBN` ASC),
+  INDEX `fk_Book_Publisher1_idx` (`Publisher_Name` ASC),
+  CONSTRAINT `fk_Book_Publisher1`
+    FOREIGN KEY (`Publisher_Name`)
+    REFERENCES `book_store`.`Publisher` (`Name`)
+    ON DELETE cascade
+    ON UPDATE cascade,
+  INDEX `fk_Book_author1_idx` (`Author_Id` ASC),
+  CONSTRAINT `fk_Book_author1`
+    FOREIGN KEY (`Author_Id`)
+    REFERENCES `book_store`.`Author` (`Author_Id`)
+    ON DELETE cascade
+    ON UPDATE cascade)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `book_store`.`Order`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `book_store`.`Manager_Order` (
+  `no_of_copies` INT NOT NULL,
+  `OrderID` INT NOT NULL AUTO_INCREMENT,
+  `Book_ISBN` INT NOT NULL,
+  PRIMARY KEY (`OrderID`, `Book_ISBN`),
+  INDEX `fk_Order_Book1_idx` (`Book_ISBN` ASC),
+  CONSTRAINT `fk_Order_Book1`
+    FOREIGN KEY (`Book_ISBN`)
+    REFERENCES `book_store`.`Book` (`ISBN`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+-- -----------------------------------------------------
+-- Table `book_store`.`User`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `book_store`.`User` (
+  `User_name` VARCHAR(15) NOT NULL,
+  `Fname` VARCHAR(15) NOT NULL,
+  `Lname` VARCHAR(15) NOT NULL,
+  `Email` VARCHAR(100) NOT NULL,
+  `Password` VARCHAR(15) NOT NULL,
+  `Phone_number` VARCHAR(15) NULL,
+  `Shipping_address` VARCHAR(45) NOT NULL,
+   `access` VARCHAR(15) NOT NULL,
+
+  PRIMARY KEY (`Email`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `book_store`.`Purchases`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `book_store`.`Purchases` (
+  `User_Email` VARCHAR(100) NOT NULL,
+  `Book_ISBN` INT NOT NULL,
+  `no_of_copies` VARCHAR(45) NOT NULL,
+  `date` date NOT NULL,
+  INDEX `fk_User_has_Book1_Book1_idx` (`Book_ISBN` ASC),
+  INDEX `fk_User_has_Book1_User1_idx` (`User_Email` ASC),
+  CONSTRAINT `fk_User_has_Book1_User1`
+    FOREIGN KEY (`User_Email`)
+    REFERENCES `book_store`.`User` (`Email`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_User_has_Book1_Book1`
+    FOREIGN KEY (`Book_ISBN`)
+    REFERENCES `book_store`.`Book` (`ISBN`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- checks negativity of book count
+DELIMITER $$
+CREATE TRIGGER negative_constraint BEFORE update ON Book
+FOR EACH ROW BEGIN
+   IF (NEW.Quantity < 0) THEN
+         SIGNAL SQLSTATE '45000'
+			SET MESSAGE_TEXT = 'there is no enough books remaining';
+   END IF;
+END$$
+DELIMITER ;
+
+
+DELIMITER $$
+-- checks if quantity is less than a threshold if it is then make an order for this book with a count = threshold
+CREATE TRIGGER threshold AFTER update ON Book
+FOR EACH ROW BEGIN
+   IF (NEW.Quantity < OLD.Threshold) THEN
+         insert into book_store.Manager_Order (no_of_copies , Book_ISBN)
+         values(OLD.Threshold , OLD.ISBN);
+   END IF;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+-- checks if quantity is less than a threshold if it is then make an order for this book with a count = threshold
+CREATE TRIGGER threshold1 AFTER insert ON Book
+FOR EACH ROW BEGIN
+   IF (NEW.Quantity < new.Threshold) THEN
+         insert into book_store.Manager_Order (no_of_copies , Book_ISBN)
+         values(NEW.Threshold, new.ISBN);
+   END IF;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+-- checks if the category of the book being inserted is from our list of categories
+CREATE TRIGGER categoryDomain1 BEFORE insert ON Book
+FOR EACH ROW BEGIN
+   IF (NEW.Category !='Science' and NEW.Category !='Art' and NEW.Category !='Religion' and 
+   NEW.Category != 'History' and NEW.Category != 'Geography') THEN
+             SIGNAL SQLSTATE '45000'
+			SET MESSAGE_TEXT = 'only categories of Science,Art,Religion,History,Geography';
+   END IF;
+END$$
+DELIMITER ;
+
+
+DELIMITER $$
+-- checks if the category of the book being updated is from our list of categories
+CREATE TRIGGER categoryDomain2 BEFORE UPDATE ON Book
+FOR EACH ROW BEGIN
+   IF (NEW.Category !='Science' and NEW.Category !='Art' and NEW.Category !='Religion' and 
+   NEW.Category != 'History' and NEW.Category != 'Geography') THEN
+               SIGNAL SQLSTATE '45000'
+			SET MESSAGE_TEXT = 'only categories of Science,Art,Religion,History,Geography';
+   END IF;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+-- decrease the quantity of the book when buying 
+CREATE TRIGGER buy BEFORE insert ON Purchases
+FOR EACH ROW BEGIN
+   update Book set Quantity = Book.Quantity - NEW.no_of_copies
+    where ISBN = NEW.Book_ISBN;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+
+CREATE TRIGGER EmailDomain BEFORE UPDATE ON User
+
+FOR EACH ROW BEGIN
+   IF (NEW.Email NOT LIKE '%_@_%._%' ) THEN
+              SIGNAL SQLSTATE '45000'
+			SET MESSAGE_TEXT = 'not valid email';
+   END IF;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+
+CREATE TRIGGER EmailDomain1 BEFORE insert ON User
+
+FOR EACH ROW BEGIN
+   IF (NEW.Email NOT LIKE '%_@_%._%' ) THEN
+               SIGNAL SQLSTATE '45000'
+			SET MESSAGE_TEXT = 'not valid email';
+   END IF;
+END$$
+DELIMITER ;
+
+ DELIMITER $$
+ CREATE TRIGGER confirm_order BEFORE DELETE ON Manager_Order
+ FOR EACH ROW BEGIN
+    update Book set Quantity = OLD.no_of_copies + Quantity
+    where ISBN = OLD.Book_ISBN;
+ END$$
+ DELIMITER ;
+
+
+
+
+
+
+
+  
+ insert into Publisher values('youssef','alexandria','0120'); 
+ insert into Publisher values('abdelrahman','alexandria','0110'); 
+ insert into Publisher values('ahmed','alexandria','0111'); 
+
+insert into Author values('1','youssef raouf');
+insert into Author values('2','ahmed hamdy'); 
+
+insert into Book values(1,'book1',100,'Art', '2021-01-01',10,3 ,'youssef',1);
+insert into Book values(2,'book2',200,'Art', '2021-01-01',10,4 ,'youssef',1);
+insert into Book values(3,'book3',300,'Art', '2021-01-01',10,5 ,'youssef',1);
+insert into Book values(4,'book4',400,'Art', '2021-01-01',10,6 ,'youssef',1);
+insert into Book values(5,'book5',500,'Art', '2021-01-01',20,7 ,'youssef',1);
+insert into Book values(6,'book6',600,'Art', '2021-01-01',20,8 ,'youssef',2);
+insert into Book values(7,'book7',700,'Art', '2021-01-01',20,5 ,'youssef',2);
+insert into Book values(8,'book8',800,'Art', '2021-01-01',20,6 ,'youssef',2);
+insert into Book values(9,'book9',900,'Art', '2021-01-01',20,3 ,'youssef',2);
+insert into Book values(10,'book10',1000,'Art', '2021-01-01',20,4 ,'youssef',2);
+insert into Book values(11,'book11',1100,'Art', '2021-01-01',20,5 ,'youssef',2);
+insert into Book values(12,'book12',1200,'Art', '2021-01-01',20,600,'youssef',2);
+insert into Book values(13,'book13',900,'Art', '2021-01-01',20,6 ,'youssef',2);
+insert into Book values(14,'book14',900,'Art', '2021-01-01',20,3 ,'youssef',2);
+
+insert into User values ('youssef','youssef','raouf','you@gmail.com','000','000000','address','manager');
+insert into User values ('abdelrahman','abdelrahman','abdo','abdelrahman@gmail.com','000','000000','address','user');
+insert into User values ('abdelrahman','abdelrahman','bedo','body@gmail.com','000','000000','address','user');
+insert into User values ('ahmed','ahmed','hamada','ahmed@gmail.com','000','000000','address','user');
+
+insert into Purchases values  ('you@gmail.com' ,'2' ,2 ,'2021-06-02') ;
+insert into Purchases values  ('you@gmail.com' ,'3' ,2 ,'2021-06-02') ;
+insert into Purchases values  ('you@gmail.com' ,'1' ,2 ,'2021-06-02') ;
+insert into Purchases values  ('abdelrahman@gmail.com' ,'1' ,1 ,'2021-06-02') ;
+insert into Purchases values  ('abdelrahman@gmail.com' ,'2' ,2 ,'2021-06-02') ;
+insert into Purchases values  ('abdelrahman@gmail.com' ,'3' ,3 ,'2021-06-02') ;
+insert into Purchases values  ('abdelrahman@gmail.com' ,'13' ,3 ,'2021-05-02') ;
+insert into Purchases values  ('ahmed@gmail.com' ,'10' ,1 ,'2021-05-02') ; 
+insert into Purchases values  ('ahmed@gmail.com' ,'13' ,3 ,'2021-05-02') ; 
+insert into Purchases values  ('ahmed@gmail.com' ,'10' ,1 ,'2021-06-02') ; 
+insert into Purchases values  ('ahmed@gmail.com' ,'9' ,1 ,'2021-06-02') ; 
